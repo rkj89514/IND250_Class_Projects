@@ -1,0 +1,11 @@
+[
+    {
+        "name": "John Meyer",
+        "phone": "434-555-1234",
+        "email": "jm@email.com",
+        "street": "123 Any St",
+        "city": "Lynchburg",
+        "state": "VA",
+        "zip_code": "24502"
+    }
+]
