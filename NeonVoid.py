@@ -88,7 +88,6 @@ class Boss(pygame.sprite.Sprite):
         self.phase = 1
         self.rot_angle = 0
         
-        # NEW: Flags to fix the health bar jitter
         self.is_spawned = False
         self.is_active = False
 
@@ -128,39 +127,43 @@ class Boss(pygame.sprite.Sprite):
             now = pygame.time.get_ticks()
 
             if self.phase == 1:
-                self.exact_x += (3 + self.level*0.5) * self.move_dir
+                # Cap speed so boss doesn't zip out of existence in late endless
+                move_spd = min(12, 3 + self.level*0.5)
+                self.exact_x += move_spd * self.move_dir
                 if self.rect.right > GAME_WIDTH - 20 or self.rect.left < 20: self.move_dir *= -1
                 
                 self.exact_y = 180 + (math.sin(self.hover_timer) * 15)
                 self.rect.centerx = int(self.exact_x)
                 self.rect.centery = int(self.exact_y)
                 
-                cooldown = max(300, 1000 - (self.level*60))
+                cooldown = max(150, 1000 - (self.level*60))
                 if now - self.last_attack > cooldown:
                     dx, dy = player_pos[0] - self.rect.centerx, player_pos[1] - self.rect.centery
                     base_ang = -math.degrees(math.atan2(dy, dx)) - 90
                     
-                    spread_count = 1 + (self.level // 2)
-                    spread_gap = max(5, 20 - self.level)
+                    spread_count = min(15, 1 + (self.level // 2))
+                    spread_gap = max(3, 20 - self.level)
                     start_ang = base_ang - (spread_gap * (spread_count // 2))
                     
                     for i in range(spread_count):
-                        bullet_group.add(Bullet(self.rect.centerx, self.rect.centery, start_ang + (i*spread_gap), col, 6+self.level*0.5, 8))
+                        bullet_group.add(Bullet(self.rect.centerx, self.rect.centery, start_ang + (i*spread_gap), col, min(14, 6+self.level*0.5), 8))
                     self.last_attack = now
                     
             elif self.phase == 2:
-                self.exact_x += (4 + self.level*0.5) * self.move_dir
+                move_spd = min(14, 4 + self.level*0.5)
+                self.exact_x += move_spd * self.move_dir
                 if self.rect.right > GAME_WIDTH - 20 or self.rect.left < 20: self.move_dir *= -1
                 self.rect.centerx = int(self.exact_x)
                 
-                if now - self.spawn_timer > max(1500, 4000 - (self.level*200)):
+                spawn_cd = max(500, 4000 - (self.level*200))
+                if now - self.spawn_timer > spawn_cd:
                     e_type = "SWARMER" if self.level >= 4 else "STALKER"
                     enemy_group.add(Enemy(self.level, forced_type=e_type, x=self.rect.centerx, y=self.rect.centery))
                     self.spawn_timer = now
                     
-                cooldown = max(200, 800 - (self.level*50))
+                cooldown = max(100, 800 - (self.level*50))
                 if now - self.last_attack > cooldown:
-                    b_count = min(6, 2 + (self.level//3))
+                    b_count = min(12, 2 + (self.level//3))
                     for i in range(b_count):
                         ang = 180 + random.randint(-40, 40)
                         bullet_group.add(Bullet(self.rect.centerx, self.rect.centery, ang, col, 8, 10))
@@ -172,13 +175,13 @@ class Boss(pygame.sprite.Sprite):
                 self.exact_y += (ty - self.exact_y) * 0.05
                 self.rect.center = (int(self.exact_x), int(self.exact_y))
                 
-                cooldown = max(50, 250 - (self.level*15))
-                spiral_arms = min(8, 3 + (self.level // 2))
+                cooldown = max(20, 250 - (self.level*15))
+                spiral_arms = min(16, 3 + (self.level // 2))
                 
                 if now - self.last_attack > cooldown:
                     for i in range(spiral_arms):
                         a = self.rot_angle * (2 + self.level*0.2) + (i * (360/spiral_arms))
-                        bullet_group.add(Bullet(self.rect.centerx, self.rect.centery, a, col, 5+self.level*0.3, 6))
+                        bullet_group.add(Bullet(self.rect.centerx, self.rect.centery, a, col, min(12, 5+self.level*0.3), 6))
                     self.last_attack = now
 
 class Player(pygame.sprite.Sprite):
@@ -249,6 +252,14 @@ class NeonEngine:
         self.start_btn_rect = pygame.Rect(GAME_WIDTH//2 - 100, 580, 200, 60)
         self.selected_ship_idx = 0
         
+        # Mode Settings
+        self.mode_values = [5, 10, 20, float('inf')]
+        self.mode_names = ["SHORT (5 LVLS)", "STANDARD (10 LVLS)", "LONG (20 LVLS)", "ENDLESS"]
+        self.selected_mode_idx = 1
+        self.max_levels = 10
+        self.mode_rects = [pygame.Rect(GAME_WIDTH//2 - 175, 250 + i*70, 350, 50) for i in range(4)]
+        self.next_btn_rect = pygame.Rect(GAME_WIDTH//2 - 150, 600, 300, 50)
+
         # Load High Score
         self.high_score = 0
         self.highscore_file = "neon_void_highscore.txt"
@@ -317,7 +328,8 @@ class NeonEngine:
         
         self.draw_text(surf, "DATABASE", self.fonts["M"], CYAN, px, 40, False)
         goal = f"GOAL: {max(0, self.kill_goal - self.kills_in_level)}" if not self.boss_grp.sprite else "BOSS ENGAGED"
-        stats = [f"LEVEL: {self.level}/10", f"SCRAP: {self.player.scrap}", f"SCORE: {self.score}", goal]
+        lvl_str = "∞" if self.max_levels == float('inf') else str(self.max_levels)
+        stats = [f"LEVEL: {self.level}/{lvl_str}", f"SCRAP: {self.player.scrap}", f"SCORE: {self.score}", goal]
         
         for i, s in enumerate(stats): self.draw_text(surf, s, self.fonts["S"], WHITE, px, 90 + (i*25), False)
         
@@ -369,7 +381,6 @@ class NeonEngine:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_f: self.toggle_fullscreen()
                     
-                    # Pause Logic
                     if event.key in [pygame.K_SPACE, pygame.K_p]:
                         if self.state == "PLAYING":
                             self.state = "PAUSED"
@@ -388,8 +399,15 @@ class NeonEngine:
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if self.state == "MENU" and self.start_btn_rect.collidepoint(mx, my):
-                        self.state = "SHIP_SELECT"
-                    
+                        self.state = "MODE_SELECT"
+                        
+                    elif self.state == "MODE_SELECT":
+                        for i, r in enumerate(self.mode_rects):
+                            if r.collidepoint(mx, my): self.selected_mode_idx = i
+                        if self.next_btn_rect.collidepoint(mx, my):
+                            self.max_levels = self.mode_values[self.selected_mode_idx]
+                            self.state = "SHIP_SELECT"
+
                     elif self.state == "PAUSED":
                         if self.resume_btn.collidepoint(mx, my):
                             self.state = "PLAYING"
@@ -476,7 +494,7 @@ class NeonEngine:
                             self.victory_timer = pygame.time.get_ticks()
 
                 if self.victory_timer != 0 and pygame.time.get_ticks() - self.victory_timer > 3000:
-                    if self.level >= 10: 
+                    if self.level >= self.max_levels: 
                         self.check_high_score()
                         self.state = "VICTORY"
                     else: 
@@ -559,6 +577,7 @@ class NeonEngine:
 
             if self.state == "PAUSED": self.draw_pause(self.canvas, mx, my)
             elif self.state == "SHOP": self.draw_shop(self.canvas, mx, my)
+            elif self.state == "MODE_SELECT": self.draw_mode_select(self.canvas, mx, my)
             elif self.state == "SHIP_SELECT": self.draw_ship_select(self.canvas, mx, my)
             elif self.state == "MENU": self.draw_menu(self.canvas)
             elif self.state == "GAMEOVER": 
@@ -579,7 +598,21 @@ class NeonEngine:
         self.draw_text(surf, f"HIGH SCORE: {self.high_score}", self.fonts["M"], YELLOW, GAME_WIDTH//2, 260)
         
         pygame.draw.rect(surf, CYAN, self.start_btn_rect, 2)
-        self.draw_text(surf, "DEPLOY VESSEL", self.fonts["M"], CYAN, self.start_btn_rect.centerx, self.start_btn_rect.centery)
+        self.draw_text(surf, "SYSTEM START", self.fonts["M"], CYAN, self.start_btn_rect.centerx, self.start_btn_rect.centery)
+
+    def draw_mode_select(self, surf, mx, my):
+        self.draw_text(surf, "SELECT MISSION PARAMETERS", self.fonts["L"], CYAN, GAME_WIDTH//2, 150)
+        
+        for i, rect in enumerate(self.mode_rects):
+            col = YELLOW if i == self.selected_mode_idx else DARK_GRAY
+            if rect.collidepoint(mx, my) and i != self.selected_mode_idx:
+                pygame.draw.rect(surf, (20,20,30), rect)
+            pygame.draw.rect(surf, col, rect, 2)
+            self.draw_text(surf, self.mode_names[i], self.fonts["M"], col, rect.centerx, rect.centery)
+            
+        if self.next_btn_rect.collidepoint(mx, my): pygame.draw.rect(surf, (10,50,50), self.next_btn_rect)
+        pygame.draw.rect(surf, CYAN, self.next_btn_rect, 2)
+        self.draw_text(surf, "NEXT ->", self.fonts["M"], CYAN, self.next_btn_rect.centerx, self.next_btn_rect.centery)
 
     def draw_pause(self, surf, mx, my):
         overlay = pygame.Surface((GAME_WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -589,12 +622,10 @@ class NeonEngine:
         self.draw_text(surf, "SYSTEM PAUSED", self.fonts["L"], CYAN, GAME_WIDTH//2, 200)
         self.draw_text(surf, f"CURRENT SECTOR: LEVEL {self.level}", self.fonts["M"], WHITE, GAME_WIDTH//2, 300)
         
-        # Resume Button
         if self.resume_btn.collidepoint(mx, my): pygame.draw.rect(surf, (10, 50, 50), self.resume_btn)
         pygame.draw.rect(surf, CYAN, self.resume_btn, 2)
         self.draw_text(surf, "RESUME", self.fonts["M"], CYAN, self.resume_btn.centerx, self.resume_btn.centery)
 
-        # Quit Button
         if self.quit_btn.collidepoint(mx, my): pygame.draw.rect(surf, (50, 10, 10), self.quit_btn)
         pygame.draw.rect(surf, RED, self.quit_btn, 2)
         self.draw_text(surf, "QUIT TO MENU", self.fonts["M"], RED, self.quit_btn.centerx, self.quit_btn.centery)
@@ -686,8 +717,8 @@ class NeonEngine:
                     break
                     
         if action == 1 and p.scrap >= 150: p.scrap -= 150; p.max_health += 25; p.health = p.max_health
-        elif action == 2 and p.scrap >= 250: p.scrap -= 250; p.fire_rate = max(80, p.fire_rate - 30)
-        elif action == 3 and p.scrap >= 200: p.scrap -= 200; p.move_speed += 1
+        elif action == 2 and p.scrap >= 250: p.scrap -= 250; p.fire_rate = max(40, p.fire_rate - 30)
+        elif action == 3 and p.scrap >= 200: p.scrap -= 200; p.move_speed = min(15, p.move_speed + 1)
         elif action == 4 and p.scrap >= 300: p.scrap -= 300; p.bullet_damage += 1
         elif action == 5:
             if not p.side_cannons and p.scrap >= 500: p.scrap -= 500; p.side_cannons = True
@@ -721,7 +752,8 @@ class Enemy(pygame.sprite.Sprite):
         self.last_shot = pygame.time.get_ticks()
         self.move_timer = 0
         
-        self.speed = 3 + (level * 0.2)
+        # Cap enemy speed so they remain shootable in deep endless runs
+        self.speed = min(12, 3 + (level * 0.2))
         if self.type == "SWARMER": self.speed += 1
 
     def update(self, px, py, bullet_group):
@@ -741,7 +773,7 @@ class Enemy(pygame.sprite.Sprite):
             now = pygame.time.get_ticks()
             if now - self.last_shot > 2000:
                 ang = -math.degrees(math.atan2(dy, dx)) - 90
-                bullet_group.add(Bullet(self.rect.centerx, self.rect.centery, ang, self.color, 5))
+                bullet_group.add(Bullet(self.rect.centerx, self.rect.centery, ang, self.color, min(14, 5 + (self.health//10))))
                 self.last_shot = now
                 
         elif self.type == "SWARMER":
